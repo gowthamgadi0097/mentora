@@ -10,7 +10,7 @@ type Provider = "anthropic" | "openai" | "gemini";
 const DEFAULT_MODELS: Record<Provider, string> = {
   anthropic: "claude-sonnet-5-5",
   openai: "gpt-4o-mini",
-  gemini: "gemini-2.5-flash",
+  gemini: "gemini-flash-latest",
 };
 
 function config() {
@@ -65,29 +65,64 @@ export async function complete(
     return data.choices?.[0]?.message?.content ?? "";
   }
 
+  // Gemini. If the configured model no longer exists (404), find one this key can use and retry.
+  try {
+    return await geminiGenerate(key, geminiFallback ?? model, system, messages, maxTokens);
+  } catch (e) {
+    if (!(e instanceof Error) || !e.message.includes("(404)")) throw e;
+    const alt = await pickGeminiModel(key);
+    if (!alt || alt === (geminiFallback ?? model)) throw e;
+    console.warn(`Gemini model "${geminiFallback ?? model}" not found; switching to "${alt}"`);
+    geminiFallback = alt;
+    return geminiGenerate(key, alt, system, messages, maxTokens);
+  }
+}
+
+let geminiFallback: string | undefined;
+
+async function geminiGenerate(
+  key: string,
+  model: string,
+  system: string,
+  messages: ChatMessage[],
+  maxTokens: number
+): Promise<string> {
   const res = await ensureOk(
-    await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: system }] },
-          contents: messages.map((m) => ({
-            role: m.role === "assistant" ? "model" : "user",
-            parts: [{ text: m.content }],
-          })),
-          generationConfig: {
-            maxOutputTokens: maxTokens,
-            // 2.5 Flash "thinking" tokens would eat the output budget and cut the JSON short
-            ...(model.includes("2.5-flash") ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
-          },
-        }),
-      }
-    )
+    await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: messages.map((m) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: m.content }],
+        })),
+        generationConfig: {
+          // extra headroom: internal "thinking" tokens can count against this limit
+          maxOutputTokens: maxTokens * 4,
+          ...(model.includes("2.5-flash") ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+        },
+      }),
+    })
   );
   const data = await res.json();
   return data.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+}
+
+/** Asks Google which models this key can call and picks a current Flash model. */
+async function pickGeminiModel(key: string): Promise<string | undefined> {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${key}`).catch(
+    () => null
+  );
+  if (!res?.ok) return undefined;
+  const data = (await res.json()) as {
+    models?: { name: string; supportedGenerationMethods?: string[] }[];
+  };
+  const names = (data.models ?? [])
+    .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+    .map((m) => m.name.replace(/^models\//, ""));
+  const clean = names.filter((n) => /flash/.test(n) && !/(image|tts|live|audio|thinking|exp|preview|lite|embedding)/.test(n));
+  return clean.sort().reverse()[0] ?? names.find((n) => /flash/.test(n));
 }
 
 /** Turns an SSE response body into a stream of plain text chunks. */
