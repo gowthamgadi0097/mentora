@@ -16,8 +16,8 @@ const config: Config = {
         border: withAlpha("border"),
       },
       fontFamily: {
-        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
-        display: ["var(--font-display)", "ui-serif", "Georgia", "serif"],
+        sans: ["var(--font-sans)", "Inter", "ui-sans-serif", "system-ui", "Segoe UI", "Arial", "sans-serif"],
+        display: ["var(--font-display)", "Playfair Display", "Georgia", "ui-serif", "serif"],
       },
       boxShadow: {
         glow: "0 10px 40px -10px rgb(var(--primary) / 0.55)",

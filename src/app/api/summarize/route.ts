@@ -1,6 +1,6 @@
 import pdf from "pdf-parse/lib/pdf-parse.js";
 import { getUser } from "@/lib/auth";
-import { complete } from "@/lib/ai";
+import { aiErrorMessage, complete } from "@/lib/ai";
 import { summarizeSystem } from "@/lib/prompts";
 import { rateLimit } from "@/lib/ratelimit";
 import { db } from "@/lib/db";
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
     return json({ id: note.id, title, summary });
   } catch (e) {
     console.error(e);
-    return json({ error: "Summarizing failed. Please try again." }, 502);
+    return json({ error: aiErrorMessage(e) }, 502);
   }
 }
 

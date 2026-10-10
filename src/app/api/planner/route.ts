@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getUser } from "@/lib/auth";
-import { complete, extractJson } from "@/lib/ai";
+import { aiErrorMessage, complete, extractJson } from "@/lib/ai";
 import { plannerSystem } from "@/lib/prompts";
 import { rateLimit } from "@/lib/ratelimit";
 import { json } from "@/lib/utils";
@@ -33,6 +33,6 @@ export async function POST(req: Request) {
     return json({ plan: PlanSchema.parse(extractJson(raw)) });
   } catch (e) {
     console.error(e);
-    return json({ error: "Could not build a valid plan. Please try again." }, 502);
+    return json({ error: aiErrorMessage(e) }, 502);
   }
 }

@@ -10,7 +10,7 @@ type Provider = "anthropic" | "openai" | "gemini";
 const DEFAULT_MODELS: Record<Provider, string> = {
   anthropic: "claude-sonnet-5-5",
   openai: "gpt-4o-mini",
-  gemini: "gemini-1.5-flash",
+  gemini: "gemini-2.5-flash",
 };
 
 function config() {
@@ -77,7 +77,11 @@ export async function complete(
             role: m.role === "assistant" ? "model" : "user",
             parts: [{ text: m.content }],
           })),
-          generationConfig: { maxOutputTokens: maxTokens },
+          generationConfig: {
+            maxOutputTokens: maxTokens,
+            // 2.5 Flash "thinking" tokens would eat the output budget and cut the JSON short
+            ...(model.includes("2.5-flash") ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+          },
         }),
       }
     )
@@ -157,6 +161,28 @@ export async function streamChat(system: string, messages: ChatMessage[]): Promi
       c.close();
     },
   });
+}
+
+/** Turns any AI-related failure into a message the user can act on. */
+export function aiErrorMessage(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (msg.includes("AI_API_KEY is not set"))
+    return "AI is not configured: add AI_API_KEY in your host's environment variables, then redeploy.";
+  if (msg.includes("Unknown AI_PROVIDER")) return "AI_PROVIDER must be one of: anthropic, openai, gemini.";
+
+  const m = msg.match(/AI request failed \((\d+)\)/);
+  if (m) {
+    const status = Number(m[1]);
+    if (status === 401 || status === 403)
+      return "The AI provider rejected your API key. Check AI_API_KEY, and that AI_PROVIDER matches the key's provider.";
+    if (status === 404) return "The AI model was not found. Set AI_MODEL to a model your key can use.";
+    if (status === 429) return "The AI provider's limit or credit balance was reached. Check your plan, then try again.";
+    return `The AI provider returned an error (${status}). Check your server logs for details.`;
+  }
+
+  if (msg.includes("did not return JSON") || (e instanceof Error && (e.name === "ZodError" || e.name === "SyntaxError")))
+    return "The AI replied in an unexpected format. Please try again.";
+  return "Could not reach the AI service. Please try again.";
 }
 
 /** Pulls the first JSON object out of a model reply (tolerates stray prose or code fences). */

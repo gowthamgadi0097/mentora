@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getUser } from "@/lib/auth";
-import { complete, extractJson } from "@/lib/ai";
+import { aiErrorMessage, complete, extractJson } from "@/lib/ai";
 import { quizSystem, quizUser } from "@/lib/prompts";
 import { rateLimit } from "@/lib/ratelimit";
 import { db } from "@/lib/db";
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     return json({ id: saved.id });
   } catch (e) {
     console.error(e);
-    return json({ error: "Could not generate a valid quiz. Please try again." }, 502);
+    return json({ error: aiErrorMessage(e) }, 502);
   }
 }
 

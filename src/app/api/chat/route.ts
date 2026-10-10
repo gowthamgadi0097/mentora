@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getUser } from "@/lib/auth";
-import { streamChat } from "@/lib/ai";
+import { aiErrorMessage, streamChat } from "@/lib/ai";
 import { tutorSystem } from "@/lib/prompts";
 import { rateLimit } from "@/lib/ratelimit";
 
@@ -30,6 +30,6 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     console.error(e);
-    return new Response("The tutor is unavailable right now.", { status: 502 });
+    return new Response(aiErrorMessage(e), { status: 502 });
   }
 }
